@@ -1,0 +1,190 @@
+<div id="app">
+  <div class="card">
+    <div class="header">
+      <div class="title">오늘의 환율</div>
+      <button id="refresh" class="refresh" aria-label="새로고침">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+      </button>
+    </div>
+
+    <div id="rates">
+      <div class="row">
+        <div class="left">
+          <span class="flag">🇺🇸</span>
+          <div class="ccy">
+            <div class="code">USD</div>
+            <div class="name">미국 달러</div>
+          </div>
+        </div>
+        <div class="right">
+          <div class="value" id="usd-val">—</div>
+          <div class="unit">원 / 1달러</div>
+          <div class="avg" id="usd-avg">7일 평균 —</div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="left">
+          <span class="flag">🇨🇳</span>
+          <div class="ccy">
+            <div class="code">CNY</div>
+            <div class="name">중국 위안</div>
+          </div>
+        </div>
+        <div class="right">
+          <div class="value" id="cny-val">—</div>
+          <div class="unit">원 / 1위안</div>
+          <div class="avg" id="cny-avg">7일 평균 —</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span id="status">불러오는 중…</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  #app {
+    font-family: -apple-system, "Samsung Sans", "Roboto", "Segoe UI", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 16px;
+  }
+  .card {
+    width: 100%;
+    max-width: 360px;
+    background: #ffffff;
+    border-radius: 22px;
+    padding: 22px 20px 16px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+    border: 1px solid #f0f0f2;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .title {
+    font-size: 19px;
+    font-weight: 700;
+    color: #1a1a1a;
+    letter-spacing: -0.3px;
+  }
+  .refresh {
+    width: 38px; height: 38px;
+    border: none;
+    border-radius: 12px;
+    background: #f5f6f8;
+    color: #555;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.3s;
+  }
+  .refresh:active { background: #e9eaee; }
+  .refresh.spin svg { animation: spin 0.7s linear; }
+  @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 4px;
+  }
+  .row + .row { border-top: 1px solid #f2f2f4; }
+  .left { display: flex; align-items: center; gap: 12px; }
+  .flag { font-size: 30px; line-height: 1; }
+  .code { font-size: 16px; font-weight: 700; color: #222; }
+  .name { font-size: 12px; color: #9a9aa2; margin-top: 2px; }
+  .right { text-align: right; }
+  .value {
+    font-size: 26px;
+    font-weight: 800;
+    color: #1a1a1a;
+    letter-spacing: -0.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .unit { font-size: 11px; color: #b0b0b8; margin-top: 1px; }
+  .avg {
+    font-size: 12px;
+    color: #6b8cff;
+    font-weight: 600;
+    margin-top: 5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .footer {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f2f2f4;
+    text-align: center;
+  }
+  #status { font-size: 12px; color: #b0b0b8; }
+  #status.error { color: #e05a4f; }
+</style>
+
+<script>
+  const usdEl = document.getElementById('usd-val');
+  const cnyEl = document.getElementById('cny-val');
+  const usdAvgEl = document.getElementById('usd-avg');
+  const cnyAvgEl = document.getElementById('cny-avg');
+  const statusEl = document.getElementById('status');
+  const refreshBtn = document.getElementById('refresh');
+
+  function fmt(n) {
+    return n.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function ymd(d) {
+    return d.toISOString().slice(0, 10);
+  }
+
+  // from 통화 → KRW 시계열을 받아 { current, avg } 반환
+  async function fetchSeries(from) {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - 9); // 영업일 기준 약 7일치 확보
+    const url = `https://api.frankfurter.app/${ymd(start)}..${ymd(end)}?from=${from}&to=KRW`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('네트워크 오류');
+    const data = await res.json();
+    const dates = Object.keys(data.rates).sort();
+    if (dates.length === 0) throw new Error('데이터 없음');
+
+    const recent = dates.slice(-7); // 최근 7개 영업일
+    const vals = recent.map(d => data.rates[d].KRW);
+    const current = data.rates[dates[dates.length - 1]].KRW;
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return { current, avg, lastDate: dates[dates.length - 1] };
+  }
+
+  async function load() {
+    statusEl.classList.remove('error');
+    statusEl.textContent = '불러오는 중…';
+    refreshBtn.classList.add('spin');
+    try {
+      const [usd, cny] = await Promise.all([
+        fetchSeries('USD'),
+        fetchSeries('CNY')
+      ]);
+
+      usdEl.textContent = fmt(usd.current);
+      cnyEl.textContent = fmt(cny.current);
+      usdAvgEl.textContent = '7일 평균 ' + fmt(usd.avg) + '원';
+      cnyAvgEl.textContent = '7일 평균 ' + fmt(cny.avg) + '원';
+
+      const [y, m, d] = usd.lastDate.split('-');
+      statusEl.textContent = `기준일 ${Number(m)}월 ${Number(d)}일 · 평균은 최근 영업일 기준`;
+    } catch (e) {
+      statusEl.textContent = '환율을 불러오지 못했어요. 다시 시도해 주세요.';
+      statusEl.classList.add('error');
+    } finally {
+      setTimeout(() => refreshBtn.classList.remove('spin'), 700);
+    }
+  }
+
+  refreshBtn.addEventListener('click', load);
+  load();
+</script>
